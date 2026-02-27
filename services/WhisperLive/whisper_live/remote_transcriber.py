@@ -166,6 +166,7 @@ class RemoteTranscriber:
         self.response_format = "verbose_json"
         self.temperature = temperature or os.getenv("REMOTE_TRANSCRIBER_TEMPERATURE", "0")
         self.vad_model = vad_model or os.getenv("REMOTE_TRANSCRIBER_VAD_MODEL")
+        self.default_prompt = os.getenv("REMOTE_TRANSCRIBER_PROMPT")
         normalized_tier = str(transcription_tier or "realtime").strip().lower()
         self.transcription_tier = normalized_tier if normalized_tier in ("realtime", "deferred") else "realtime"
         # Request only segment timestamps (no word-level precision needed)
@@ -276,31 +277,25 @@ class RemoteTranscriber:
             "X-Transcription-Tier": self.transcription_tier,
         }
         
-        # Prepare form data
+        # Prepare form data (only standard OpenAI/Groq-compatible params)
         data = {
             "model": self.model,
             "temperature": self.temperature,
-            "transcription_tier": self.transcription_tier,
         }
-        
-        if self.vad_model:
-            data["vad_model"] = self.vad_model
-        
+
         if language:
             data["language"] = language
-        
+
         if prompt:
             data["prompt"] = prompt
-        
+        elif self.default_prompt:
+            data["prompt"] = self.default_prompt
+
         if task == "translate":
             data["task"] = task
-        
-        # Add response_format if supported (some APIs may ignore this)
+
         if self.response_format:
             data["response_format"] = self.response_format
-        
-        if self.timestamp_granularities:
-            data["timestamp_granularities"] = self.timestamp_granularities
         
         # Log request details (masked)
         auth_header_masked = f"Bearer {self.api_key[:4]}...{self.api_key[-4:]}" if len(self.api_key) > 8 else "Bearer ***"

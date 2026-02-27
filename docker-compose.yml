@@ -99,8 +99,6 @@ services:
     depends_on:
       redis:
         condition: service_started
-      tts-service:
-        condition: service_started
     networks:
       - vexa_default
     restart: unless-stopped
@@ -268,6 +266,9 @@ services:
       - DEVICE_TYPE=remote
       - REMOTE_TRANSCRIBER_URL=${REMOTE_TRANSCRIBER_URL}
       - REMOTE_TRANSCRIBER_API_KEY=${REMOTE_TRANSCRIBER_API_KEY}
+      - REMOTE_TRANSCRIBER_MODEL=${REMOTE_TRANSCRIBER_MODEL:-whisper-large-v3}
+      - REMOTE_TRANSCRIBER_TEMPERATURE=${REMOTE_TRANSCRIBER_TEMPERATURE:-0}
+      - REMOTE_TRANSCRIBER_PROMPT=${REMOTE_TRANSCRIBER_PROMPT:-}
       - CONSUL_ENABLE=false
     deploy:
       replicas: 1
@@ -347,6 +348,7 @@ services:
     restart: unless-stopped
 
   mcp:
+    profiles: ["mcp"]
     build:
       context: .
       dockerfile: services/mcp/Dockerfile
@@ -364,6 +366,7 @@ services:
     restart: unless-stopped
 
   tts-service:
+    profiles: ["voice-agent"]
     build:
       context: .
       dockerfile: services/tts-service/Dockerfile
