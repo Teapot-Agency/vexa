@@ -35,6 +35,13 @@ except Exception:
     RemoteTranscriber = None
     RemoteTranscriberOverloaded = None
 
+try:
+    from whisper_live.elevenlabs_transcriber import ElevenLabsTranscriber
+    ELEVENLABS_AVAILABLE = True
+except Exception:
+    ELEVENLABS_AVAILABLE = False
+    ElevenLabsTranscriber = None
+
 # Import for health check HTTP server
 import http.server
 import socketserver
@@ -3283,36 +3290,51 @@ class ServeClientRemote(ServeClientBase):
 
     def create_model(self):
         """
-        Instantiates a new Remote transcriber.
+        Instantiates a transcriber based on REMOTE_TRANSCRIBER_PROVIDER env var.
+        Supports "elevenlabs" (default) and "groq" (OpenAI-compatible).
         """
-        api_url = os.getenv("TRANSCRIBER_URL") or os.getenv("REMOTE_TRANSCRIBER_URL")
-        api_key = (os.getenv("TRANSCRIBER_API_KEY") or os.getenv("REMOTE_TRANSCRIBER_API_KEY") or "").strip()
-        # Model parameter is required by API but ignored by transcription service (uses its own configured model)
-        # Use a placeholder value since the service doesn't actually use this parameter
-        model = self.model or os.getenv("REMOTE_TRANSCRIBER_MODEL") or "default"
-        
-        if not api_url:
-            raise ValueError(
-                "TRANSCRIBER_URL (or REMOTE_TRANSCRIBER_URL) environment variable is not set. "
-                "This is required to connect to the remote transcription service."
+        provider = os.getenv("REMOTE_TRANSCRIBER_PROVIDER", "elevenlabs").lower()
+
+        if provider == "elevenlabs" and ELEVENLABS_AVAILABLE:
+            api_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
+            model = os.getenv("ELEVENLABS_MODEL", "scribe_v2")
+            if not api_key:
+                raise ValueError(
+                    "ELEVENLABS_API_KEY environment variable is not set. "
+                    "Required for ElevenLabs Scribe transcription."
+                )
+            logging.info(f"Creating ElevenLabsTranscriber: model={model}")
+            self.transcriber = ElevenLabsTranscriber(
+                api_key=api_key,
+                model=model,
+                sampling_rate=self.RATE,
             )
-        if not api_key:
-            raise ValueError(
-                "TRANSCRIBER_API_KEY (or REMOTE_TRANSCRIBER_API_KEY) environment variable is not set. "
-                "This is required to authenticate with the remote transcription service."
+        else:
+            # Groq / OpenAI-compatible (original code, kept for future use)
+            api_url = os.getenv("TRANSCRIBER_URL") or os.getenv("REMOTE_TRANSCRIBER_URL")
+            api_key = (os.getenv("TRANSCRIBER_API_KEY") or os.getenv("REMOTE_TRANSCRIBER_API_KEY") or "").strip()
+            model = self.model or os.getenv("REMOTE_TRANSCRIBER_MODEL") or "default"
+
+            if not api_url:
+                raise ValueError(
+                    "TRANSCRIBER_URL (or REMOTE_TRANSCRIBER_URL) environment variable is not set. "
+                    "This is required to connect to the remote transcription service."
+                )
+            if not api_key:
+                raise ValueError(
+                    "TRANSCRIBER_API_KEY (or REMOTE_TRANSCRIBER_API_KEY) environment variable is not set. "
+                    "This is required to authenticate with the remote transcription service."
+                )
+
+            api_key_masked = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "***"
+            logging.info(f"Creating RemoteTranscriber (Groq): URL={api_url}, Model={model}")
+            self.transcriber = RemoteTranscriber(
+                api_url=api_url,
+                api_key=api_key,
+                model=model,
+                transcription_tier=self.transcription_tier,
+                sampling_rate=self.RATE,
             )
-        
-        # Log masked API key for debugging
-        api_key_masked = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "***"
-        logging.debug(f"Creating RemoteTranscriber with API key: {api_key_masked}, URL: {api_url}, Model: {model}")
-        
-        self.transcriber = RemoteTranscriber(
-            api_url=api_url,
-            api_key=api_key,
-            model=model,
-            transcription_tier=self.transcription_tier,
-            sampling_rate=self.RATE,
-        )
 
     def transcribe_audio(self, input_sample):
         """

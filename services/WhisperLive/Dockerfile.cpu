@@ -9,6 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     wget \
     curl \
+    gcc \
+    libc6-dev \
+    portaudio19-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Set environment variables
@@ -27,15 +30,19 @@ COPY services/WhisperLive/requirements/client.txt /tmp/requirements-client.txt
 RUN sed -i '/openai-whisper/d' /tmp/requirements-server.txt || true \
     && sed -i '/onnxruntime==/d' /tmp/requirements-server.txt || true
 
-# Install CPU-specific packages (server + client deps for testing)
-RUN pip install --no-cache-dir -r /tmp/requirements-server.txt \
-    && pip install --no-cache-dir -r /tmp/requirements-client.txt \
-    && pip install --no-cache-dir onnxruntime \
-    && pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu \
-    && pip install --no-cache-dir openai-whisper==20240930
+# Ensure pip, setuptools, wheel are available (needed by PyAudio and openai-whisper builds)
+RUN pip install --upgrade pip setuptools wheel
 
-# Install CPU-optimized faster-whisper
-RUN pip install --no-cache-dir 'faster-whisper[cpu]'
+# Install CPU-specific packages (server + client deps for testing)
+# Note: openai-whisper and faster-whisper not needed for remote mode (Scribe v2 / Groq)
+# but kept commented for potential future local whisper use:
+#   && pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+#   && pip install --no-build-isolation openai-whisper==20240930
+#   && pip install 'faster-whisper[cpu]'
+RUN pip install -r /tmp/requirements-server.txt \
+    && pip install -r /tmp/requirements-client.txt \
+    && pip install onnxruntime \
+    && pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 # Now copy the application code
 COPY services/WhisperLive/ /app/
