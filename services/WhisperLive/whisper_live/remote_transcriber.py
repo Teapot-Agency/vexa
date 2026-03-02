@@ -12,7 +12,8 @@ import tempfile
 import wave
 import logging
 import time
-from typing import BinaryIO, Iterable, List, Optional, Tuple, Union
+from pathlib import Path
+from typing import BinaryIO, Iterable, List, Optional, Set, Tuple, Union
 import numpy as np
 import httpx
 
@@ -184,7 +185,42 @@ class RemoteTranscriber:
             limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
             http2=False,  # Disable HTTP/2 for compatibility
         )
+
+        # no_speech_prob threshold — segments above this are considered silence
+        self.no_speech_threshold = float(os.getenv("REMOTE_NO_SPEECH_THRESHOLD", "0.7"))
+
+        # Load hallucination patterns once
+        self._hallucinations: Set[str] = self._load_hallucination_patterns()
     
+    @staticmethod
+    def _load_hallucination_patterns() -> Set[str]:
+        """Load hallucination strings from hallucinations/ directory (same files as server)."""
+        patterns: Set[str] = set()
+        search_dirs = [
+            Path("/app/hallucinations"),
+            Path(__file__).parent.parent / "hallucinations",
+        ]
+        for d in search_dirs:
+            if not d.is_dir():
+                continue
+            for txt_file in d.glob("*.txt"):
+                try:
+                    for line in txt_file.read_text(encoding="utf-8").splitlines():
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            patterns.add(line.lower())
+                except Exception:
+                    pass
+        if patterns:
+            logger.info(f"RemoteTranscriber: loaded {len(patterns)} hallucination patterns")
+        return patterns
+
+    def _is_hallucination(self, text: str) -> bool:
+        """Check if text matches a known hallucination pattern."""
+        if not text or not self._hallucinations:
+            return False
+        return text.strip().lower() in self._hallucinations
+
     def _numpy_to_wav_bytes(self, audio: np.ndarray) -> bytes:
         """
         Convert numpy audio array to WAV file bytes in memory.
@@ -427,26 +463,32 @@ class RemoteTranscriber:
             # If no segments, check if there's just text
             text = api_response.get("text", "")
             if text.strip():
-                # Create a single segment
-                duration = api_response.get("duration", 0.0)
-                # Handle no_speech_prob: if text exists, speech was detected
                 raw_no_speech_prob = api_response.get("no_speech_prob", 0.0)
                 clamped_prob = _clamp_probability(raw_no_speech_prob)
-                if clamped_prob >= 1.0:
-                    # Text exists but no_speech_prob is high - likely inverted or wrong scale
-                    clamped_prob = 0.1
-                
+
+                # Filter: high no_speech_prob means the API detected silence
+                if clamped_prob >= self.no_speech_threshold:
+                    logger.debug(f"Skipping silence segment (no_speech_prob={clamped_prob:.2f}): '{text.strip()}'")
+                    return segments
+
+                # Filter: known hallucination patterns
+                if self._is_hallucination(text):
+                    logger.debug(f"Filtered hallucination: '{text.strip()}'")
+                    return segments
+
+                # Create a single segment
+                duration = api_response.get("duration", 0.0)
                 segments.append(Segment(
                     id=segment_id_start,
                     seek=0,
                     start=0.0,
-                    end=duration if duration > 0 else len(text) * 0.1,  # Estimate if no duration
+                    end=duration if duration > 0 else len(text) * 0.1,
                     text=text,
                     tokens=api_response.get("tokens", []),
                     avg_logprob=api_response.get("avg_logprob", -0.5),
                     compression_ratio=api_response.get("compression_ratio", 1.0),
                     no_speech_prob=clamped_prob,
-                    words=None,  # Will be populated if word timestamps available
+                    words=None,
                     temperature=float(self.temperature),
                 ))
             return segments
@@ -484,18 +526,21 @@ class RemoteTranscriber:
             if end is None or end <= start:
                 end = start + 0.5
             
-            # Handle no_speech_prob: Fireworks API may return values > 1.0 or use inverted logic
-            # If text is present and non-empty, assume speech was detected (no_speech_prob should be low)
             raw_no_speech_prob = api_seg.get("no_speech_prob", 0.0)
             clamped_prob = _clamp_probability(raw_no_speech_prob)
-            
-            # If Fireworks returns no_speech_prob >= 1.0 but segment has text,
-            # it likely means speech WAS detected (inverted logic or different scale)
-            # Set to a low value to prevent filtering out valid segments
-            if clamped_prob >= 1.0 and api_seg.get("text", "").strip():
-                # Segment has text, so speech was detected - use low no_speech_prob
-                clamped_prob = 0.1
-            
+
+            seg_text = api_seg.get("text", "")
+
+            # Filter: high no_speech_prob means the API detected silence
+            if clamped_prob >= self.no_speech_threshold and seg_text.strip():
+                logger.debug(f"Skipping silence segment (no_speech_prob={clamped_prob:.2f}): '{seg_text.strip()}'")
+                continue
+
+            # Filter: known hallucination patterns
+            if self._is_hallucination(seg_text):
+                logger.debug(f"Filtered hallucination: '{seg_text.strip()}'")
+                continue
+
             segment = Segment(
                 id=segment_id_start + idx,
                 seek=api_seg.get("seek", 0),

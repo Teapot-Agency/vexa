@@ -19,17 +19,20 @@ ENV OMP_NUM_THREADS=4
 # Set working directory
 WORKDIR /app
 
-# Copy only the requirements file first
-COPY services/WhisperLive/requirements/server.txt /tmp/requirements.txt
+# Copy requirements files
+COPY services/WhisperLive/requirements/server.txt /tmp/requirements-server.txt
+COPY services/WhisperLive/requirements/client.txt /tmp/requirements-client.txt
 
-# Remove GPU-specific dependencies from requirements.txt
-RUN sed -i '/openai-whisper/d' /tmp/requirements.txt || true \
-    && sed -i '/onnxruntime==/d' /tmp/requirements.txt || true
+# Remove GPU-specific dependencies from server requirements
+RUN sed -i '/openai-whisper/d' /tmp/requirements-server.txt || true \
+    && sed -i '/onnxruntime==/d' /tmp/requirements-server.txt || true
 
-# Install CPU-specific packages
-RUN pip install --no-cache-dir -r /tmp/requirements.txt \
+# Install CPU-specific packages (server + client deps for testing)
+RUN pip install --no-cache-dir -r /tmp/requirements-server.txt \
+    && pip install --no-cache-dir -r /tmp/requirements-client.txt \
     && pip install --no-cache-dir onnxruntime \
-    && pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+    && pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir openai-whisper==20240930
 
 # Install CPU-optimized faster-whisper
 RUN pip install --no-cache-dir 'faster-whisper[cpu]'

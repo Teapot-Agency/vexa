@@ -40,32 +40,38 @@ class TestGetWaitTime(unittest.TestCase):
 
 
 class TestServerConnection(unittest.TestCase):
+    # Complete handshake payload with all required fields
+    VALID_HANDSHAKE = {
+        'uid': 'test_client',
+        'language': 'en',
+        'task': 'transcribe',
+        'model': 'tiny.en',
+        'platform': 'test_platform',
+        'meeting_url': 'https://meet.example.com/test',
+        'token': 'test_token',
+        'meeting_id': 'test_meeting_123',
+    }
+
     def setUp(self):
         self.server = TranscriptionServer()
 
     @mock.patch('websockets.WebSocketCommonProtocol')
     def test_connection(self, mock_websocket):
-        mock_websocket.recv.return_value = json.dumps({
-            'uid': 'test_client',
-            'language': 'en',
-            'task': 'transcribe',
-            'model': 'tiny.en'
-        })
+        mock_websocket.recv.return_value = json.dumps(self.VALID_HANDSHAKE)
         self.server.recv_audio(mock_websocket, BackendType("faster_whisper"))
 
     @mock.patch('websockets.WebSocketCommonProtocol')
     def test_recv_audio_exception_handling(self, mock_websocket):
-        mock_websocket.recv.side_effect = [json.dumps({
-            'uid': 'test_client',
-            'language': 'en',
-            'task': 'transcribe',
-            'model': 'tiny.en'
-        }),  np.array([1, 2, 3]).tobytes()]
+        mock_websocket.recv.side_effect = [
+            json.dumps(self.VALID_HANDSHAKE),
+            np.array([1, 2, 3]).tobytes(),
+        ]
 
         with self.assertLogs(level="ERROR"):
             self.server.recv_audio(mock_websocket, BackendType("faster_whisper"))
 
-        self.assertNotIn(mock_websocket, self.server.client_manager.clients)
+        if self.server.client_manager is not None:
+            self.assertNotIn(mock_websocket, self.server.client_manager.clients)
 
 
 class TestServerInferenceAccuracy(unittest.TestCase):

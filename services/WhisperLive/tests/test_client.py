@@ -51,6 +51,10 @@ class TestClientCallbacks(BaseTestCase):
             "use_vad": True,
             "max_clients": 4,
             "max_connection_time": 600,
+            "platform": self.client.platform,
+            "meeting_url": self.client.meeting_url,
+            "token": self.client.token,
+            "meeting_id": self.client.meeting_id,
         })
         self.client.on_open(self.mock_ws_app)
         self.mock_ws_app.send.assert_called_with(expected_message)

@@ -35,7 +35,8 @@ class Client:
         max_connection_time=600,
         platform="test_platform",
         meeting_url="test_url",
-        token="test_token"
+        token="test_token",
+        meeting_id="test_meeting"
     ):
         """
         Initializes a Client instance for audio recording and streaming to a server.
@@ -58,6 +59,7 @@ class Client:
             platform (str, optional): Platform identifier sent to the server. Defaults to "test_platform".
             meeting_url (str, optional): Meeting URL identifier sent to the server. Defaults to "test_url".
             token (str, optional): Token identifier sent to the server. Defaults to "test_token".
+            meeting_id (str, optional): Meeting ID identifier sent to the server. Defaults to "test_meeting".
         """
         self.recording = False
         self.task = "transcribe"
@@ -78,6 +80,7 @@ class Client:
         self.platform = platform
         self.meeting_url = meeting_url
         self.token = token
+        self.meeting_id = meeting_id
 
         if translate:
             self.task = "translate"
@@ -222,6 +225,7 @@ class Client:
             "platform": self.platform,
             "meeting_url": self.meeting_url,
             "token": self.token,
+            "meeting_id": self.meeting_id,
         }
         ws.send(json.dumps(initial_payload))
 
@@ -722,7 +726,8 @@ class TranscriptionClient(TranscriptionTeeClient):
         mute_audio_playback=False,
         platform="test_platform",
         meeting_url="test_url",
-        token="test_token"
+        token="test_token",
+        meeting_id="test_meeting"
     ):
         self.client = Client(
             host, port, lang, translate, model, srt_file_path=output_transcription_path,
@@ -730,7 +735,8 @@ class TranscriptionClient(TranscriptionTeeClient):
             max_connection_time=max_connection_time,
             platform=platform,
             meeting_url=meeting_url,
-            token=token
+            token=token,
+            meeting_id=meeting_id
         )
 
         if save_output_recording and not output_recording_filename.endswith(".wav"):
