@@ -315,6 +315,11 @@ async def _get_full_transcript_segments(
                     logger.debug(f"[Dedup Meet {internal_meeting_id}] Replacing segment '{last.text}' ({last.start_time}-{last.end_time}) with '{seg.text}' ({seg.start_time}-{seg.end_time})")
                     deduped[-1] = seg
                     continue
+                # Partial overlap with same text — keep the one that extends further
+                logger.debug(f"[Dedup Meet {internal_meeting_id}] Same-text partial overlap: keeping segment with later end_time from '{seg.text}' ({seg.start_time}-{seg.end_time}) vs '{last.text}' ({last.start_time}-{last.end_time})")
+                if seg.end_time >= last.end_time:
+                    deduped[-1] = seg
+                continue
             else:
                 # Different text: prefer the longer/outer segment
                 if seg_fully_inside_last:
