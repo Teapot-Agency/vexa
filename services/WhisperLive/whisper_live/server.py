@@ -1051,7 +1051,7 @@ class TranscriptionServer:
             if self.client_manager is None:
                 # Enforce server-side capacity from env (ignore client-provided max_clients)
                 max_clients = int(self.config_max_clients)
-                max_connection_time = options.get('max_connection_time', 3600)
+                max_connection_time = options.get('max_connection_time', 7200)
                 self.client_manager = ClientManager(max_clients, max_connection_time)
                 logging.info(f"CAPACITY: Initialized ClientManager with max_clients={max_clients}, max_connection_time={max_connection_time}")
 

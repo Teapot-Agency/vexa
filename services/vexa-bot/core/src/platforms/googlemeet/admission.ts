@@ -272,8 +272,9 @@ export async function waitForGoogleMeetingAdmission(
     // Final check after waiting/polling
     log("Performing final admission check after waiting/polling window...");
     const finalAdmissionFound = await checkForGoogleAdmissionIndicators(page);
-    const finalLobbyVisible = await checkForWaitingRoomIndicators(page);
-    if (finalAdmissionFound && !finalLobbyVisible) {
+    if (finalAdmissionFound) {
+      // Trust admission indicators even if waiting room UI is still partially visible
+      // (Google Meet keeps lobby elements in DOM during transition)
       await page.screenshot({ path: '/app/storage/screenshots/bot-checkpoint-2-admitted.png', fullPage: true });
       log("📸 Screenshot taken: Bot confirmed admitted to meeting");
       log("Successfully admitted to the Google Meet meeting");

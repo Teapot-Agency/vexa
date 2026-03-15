@@ -183,7 +183,7 @@ async def start_bot_container(
 
     container_name = f"vexa-bot-{meeting_id}-{uuid.uuid4().hex[:8]}"
     if not bot_name:
-        bot_name = f"VexaBot-{uuid.uuid4().hex[:6]}"
+        bot_name = os.environ.get("DEFAULT_BOT_NAME", "Teapot-bot")
     connection_id = str(uuid.uuid4())
     logger.info(f"Generated unique connectionId for bot session: {connection_id}")
 

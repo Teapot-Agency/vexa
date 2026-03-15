@@ -221,7 +221,7 @@ async def start_bot_container(
         "meeting_id": meeting_id,
         "platform": platform,
         "meetingUrl": meeting_url,
-        "botName": bot_name or f"VexaBot-{uuid.uuid4().hex[:6]}",
+        "botName": bot_name or os.environ.get("DEFAULT_BOT_NAME", "Teapot-bot"),
         "token": meeting_token,
         "nativeMeetingId": native_meeting_id,
         "connectionId": connection_id,
