@@ -238,6 +238,7 @@ services:
     restart: unless-stopped
 
   dashboard:
+    profiles: ["dashboard"]
     build:
       context: ${DASHBOARD_PATH:-../Vexa-Dashboard}
     ports:
