@@ -97,6 +97,15 @@ services:
     depends_on:
       redis:
         condition: service_started
+    # NOTE: This healthcheck only detects process crashes, not frozen schedulers.
+    # Silent scheduler freezes are caught by dispatch verification in
+    # vexa_services (DISPATCH_VERIFY_AFTER_MINUTES).
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     networks:
       - vexa_default
     restart: unless-stopped
