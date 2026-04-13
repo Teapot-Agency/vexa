@@ -233,8 +233,8 @@ async def start_bot_container(
         "redisUrl": REDIS_URL,
         "container_name": process_name,
         "automaticLeave": {
-            "waitingRoomTimeout": 300000,   # 5 minutes
-            "noOneJoinedTimeout": 120000,   # 2 minutes
+            "waitingRoomTimeout": 900000,   # 15 minutes
+            "noOneJoinedTimeout": 300000,   # 5 minutes
             "everyoneLeftTimeout": 60000    # 1 minute
         },
         "botManagerCallbackUrl": f"{BOT_CALLBACK_BASE_URL}/bots/internal/callback/exited"
