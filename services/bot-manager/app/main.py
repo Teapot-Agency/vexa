@@ -18,7 +18,7 @@ import uuid as uuid_lib
 # from app.database.service import TranscriptionService # Not used here
 # from app.tasks.monitoring import celery_app # Not used here
 
-from .config import BOT_IMAGE_NAME, REDIS_URL
+from .config import BOT_IMAGE_NAME, REDIS_URL, MAX_TOTAL_BOTS_PER_USER
 from app.orchestrators import (
     get_socket_session, close_docker_client, start_bot_container,
     stop_bot_container, _record_session_start, get_running_bots_status,
@@ -617,28 +617,53 @@ async def request_bot(
             detail=f"An active or requested meeting already exists for this platform and meeting ID. Platform: {req.platform.value}, Native Meeting ID: {native_meeting_id}"
         )
     
-    # --- Fast-fail concurrency limit check (DB-based) ---
+    # --- Fast-fail concurrency limit check (DB-based, two-tier) ---
     user_limit = int(getattr(current_user, "max_concurrent_bots", 0) or 0)
+
+    # Tier 1: Count only actively-recording bots (requested + active).
+    # Bots in joining/awaiting_admission (lobby) do NOT count here.
     if user_limit > 0:
-        count_stmt = select(func.count()).select_from(Meeting).where(
+        active_count_stmt = select(func.count()).select_from(Meeting).where(
             and_(
                 Meeting.user_id == current_user.id,
                 Meeting.status.in_([
                     MeetingStatus.REQUESTED.value,
-                    MeetingStatus.JOINING.value,
-                    MeetingStatus.AWAITING_ADMISSION.value,
-                    MeetingStatus.ACTIVE.value
+                    MeetingStatus.ACTIVE.value,
                 ])
             )
         )
-        count_result = await db.execute(count_stmt)
-        active_count = int(count_result.scalar() or 0)
+        active_result = await db.execute(active_count_stmt)
+        active_count = int(active_result.scalar() or 0)
         if active_count >= user_limit:
-            logger.warning(f"User {current_user.id} reached concurrent bot limit {active_count}/{user_limit}. Rejecting new launch.")
+            logger.warning(f"User {current_user.id} reached active bot limit {active_count}/{user_limit}. Rejecting new launch.")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"User has reached the maximum concurrent bot limit ({user_limit})."
+                detail=f"User has reached the maximum active bot limit ({user_limit}).",
             )
+
+    # Tier 2: Safety cap on total non-terminal bots (including lobby waiters).
+    # Prevents unbounded container creation even if active limit is not hit.
+    total_count_stmt = select(func.count()).select_from(Meeting).where(
+        and_(
+            Meeting.user_id == current_user.id,
+            Meeting.status.in_([
+                MeetingStatus.REQUESTED.value,
+                MeetingStatus.JOINING.value,
+                MeetingStatus.AWAITING_ADMISSION.value,
+                MeetingStatus.ACTIVE.value,
+            ])
+        )
+    )
+    total_result = await db.execute(total_count_stmt)
+    total_count = int(total_result.scalar() or 0)
+    if total_count >= MAX_TOTAL_BOTS_PER_USER:
+        logger.warning(f"User {current_user.id} reached total bot safety cap {total_count}/{MAX_TOTAL_BOTS_PER_USER}. Rejecting new launch.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"User has reached the maximum total bot limit ({MAX_TOTAL_BOTS_PER_USER}).",
+        )
+
+    logger.info(f"User {current_user.id} under limits: active={active_count if user_limit > 0 else 'unchecked'}/{user_limit}, total={total_count}/{MAX_TOTAL_BOTS_PER_USER}")
     
     if existing_meeting is None:
         logger.info(f"No active/valid existing meeting found for user {current_user.id}, platform '{req.platform.value}', native ID '{native_meeting_id}'. Proceeding to create a new meeting record.")
